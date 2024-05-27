@@ -1,6 +1,4 @@
 ﻿using Amazon.Auth.AccessControlPolicy;
-using Newtonsoft.Json.Linq;
-using System.Text.RegularExpressions;
 
 namespace AWSPolicyCompacter
 {
@@ -29,101 +27,57 @@ namespace AWSPolicyCompacter
             {
                 string jsonPolicy = File.ReadAllText(jsonFiles[i]);
                 policies[i] = Policy.FromJson(jsonPolicy);
-            }
-
-
-            Console.WriteLine($"{jsonFiles.Length} JSON files have been read and deserialized successfully.");
-
-            string json = File.ReadAllText(@".\policies.json");
-
-            var policyActionMapping = JObject.Parse(json);
-
-            if (policyActionMapping is null)
-            {
-                Console.WriteLine("Failed to deserialize JSON Policy Action Mapping file.");
-                return;
-            }
-            var serviceMap = policyActionMapping.Properties().First(v => v.Name.Equals("serviceMap", StringComparison.CurrentCultureIgnoreCase)).Value as JObject;
-
-            var serviceActionMap = new List<AWSServiceActions>();
-
-            foreach (var service in serviceMap.Properties())
-            {
-                serviceActionMap.Add(new AWSServiceActions
+                for (int j = 0; j < policies[i].Statements.Count; j++)
                 {
-                    ServiceName = service.Name,
-                    Actions = service.Value["Actions"].ToObject<string[]>(),
-                    StringPrefix = service.Value["StringPrefix"].ToString()
-                });
-            }
-
-            List<PrefixMap> prefixMap = new List<PrefixMap>();
-            foreach (Match match in Regex.Matches(json, @"\s+""(?<ServiceName>[\w\s\-\(\)]+)"":\s\{\s+""StringPrefix"":\W""(?<ServicePrefix>[\w\s\-]+)""", RegexOptions.ExplicitCapture))
-            {
-                prefixMap.Add(new PrefixMap() { service = match.Groups["ServiceName"].Value.Replace(" ", ""), prefix = match.Groups["ServicePrefix"].Value });
-            }
-
-
-            Policy giantPolicy = new Policy
-            {
-                Id = "CaissaDeveloperDEVPolicy",
-                Version = "2012-10-17",
-                Statements = new List<Statement>()
-                {
-                    new Statement(Statement.StatementEffect.Allow)
-                    {
-                        Resources = new List<Resource>
-                        {
-                            new Resource("*"),
-                        },
-                    }
-                },
-
-            };
-
-            foreach (var policy in policies)
-            {
-                foreach (var statement in policy.Statements)
-                {
-                    if (statement.Resources.Count == 1
-                        && statement.Resources[0].Id == "*"
-                        && statement.Conditions.Count == 0)
-                    {
-                        foreach (var action in statement.Actions)
-                        {
-                            if (action.ActionName.EndsWith(":*"))
-                            {
-                                Console.WriteLine(action.ActionName);
-                                var services = prefixMap.Where(p => p.prefix == action.ActionName[0..^2]);
-                                if (services.Count() == 0)
-                                {
-                                    Console.WriteLine("-------------- No Service? ------------");
-                                    continue;
-                                }
-                                foreach (var service in services)
-                                {
-                                    Console.WriteLine(service.service);
-                                }
-                                IEnumerable<string> actions = serviceActionMap.Where(s => s.StringPrefix == action.ActionName[0..^2]).SelectMany(s => s.Actions).Distinct();
-                                if (actions is null)
-                                {
-                                    Console.WriteLine("-------------- No Actions? ------------");
-                                    continue;
-                                }
-                                foreach (var actionName in actions)
-                                {
-                                    Console.WriteLine($"\t{action.ActionName[0..^2]}:{actionName}");
-                                }
-                            }
-
-                        }
-                    }
+                    policies[i].Statements[j].Id = $"{Path.GetFileName(jsonFiles[i][0..^4])}{j}";
                 }
             }
 
-            Console.WriteLine("JSON Policy Action Mapping file has been read and deserialized successfully.");
+            Mapper mapper = new Mapper();
 
+            // Create a new Policy object for the giant policy
+            Policy giantPolicy = new Policy
+            {
+                Id = "CaissaCorrectedSalesAdminPolicy",
+                Version = "2012-10-17",
+                Statements = new List<Statement>()
+                    {
+                        // Create a new Statement object for the generic allowed actions
+                        new Statement(Statement.StatementEffect.Allow)
+                        {
+                            Id = "GenericAllowedActions",
+                            Resources = new List<Resource>
+                            {
+                                new Resource("*"),
+                            },
+                        }
+                    },
+
+            };
+
+
+
+            var detailedPolicies = new List<Policy>();
+            var tightPolicies = new List<Policy>();
+            // Iterate through each policy
+            foreach (var policy in policies)
+            {
+                var worker = new PolicyWorker(policy, mapper);
+                detailedPolicies.Add(worker.GetDetailedPolicy());
+                tightPolicies.Add(worker.TightenPolicy());
+            }
+
+            // Create a HashSet to store the giant action list
+            var giantActionList = new HashSet<ActionIdentifier>();
+
+            // Set the actions of the first statement in the giant policy to the giant action list
+            giantPolicy.Statements[0].Actions = giantActionList.ToList();
+
+            // Write the giant policy to a JSON file
+            File.WriteAllText(@".\adminPolicy.json", giantPolicy.ToJson(true));
+            
+
+            File.WriteAllText(@".\readonlyPolicy.json", giantPolicy.ToJson(true));
         }
-
     }
 }
