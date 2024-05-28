@@ -33,51 +33,29 @@ namespace AWSPolicyCompacter
                 }
             }
 
+
             Mapper mapper = new Mapper();
-
-            // Create a new Policy object for the giant policy
-            Policy giantPolicy = new Policy
-            {
-                Id = "CaissaCorrectedSalesAdminPolicy",
-                Version = "2012-10-17",
-                Statements = new List<Statement>()
-                    {
-                        // Create a new Statement object for the generic allowed actions
-                        new Statement(Statement.StatementEffect.Allow)
-                        {
-                            Id = "GenericAllowedActions",
-                            Resources = new List<Resource>
-                            {
-                                new Resource("*"),
-                            },
-                        }
-                    },
-
-            };
-
-
+            File.WriteAllText(@".\adminPolicy.json", PolicyWorker.CombinePolicies(policies, mapper, "CaissaCorrectedSalesAdminPolicy").ToJson(true));
 
             var detailedPolicies = new List<Policy>();
             var tightPolicies = new List<Policy>();
-            // Iterate through each policy
+
             foreach (var policy in policies)
             {
                 var worker = new PolicyWorker(policy, mapper);
-                detailedPolicies.Add(worker.GetDetailedPolicy());
-                tightPolicies.Add(worker.TightenPolicy());
+                detailedPolicies.Add(worker.GetDetailedPolicy("CaissaCorrectedSalesAdminPolicy"));
+                var tightPolicy = worker.TightenPolicy("CaissaCorrectedSalesReadOnlyPolicy");
+                if (tightPolicy is not null)
+                    tightPolicies.Add(tightPolicy);
             }
 
-            // Create a HashSet to store the giant action list
-            var giantActionList = new HashSet<ActionIdentifier>();
 
-            // Set the actions of the first statement in the giant policy to the giant action list
-            giantPolicy.Statements[0].Actions = giantActionList.ToList();
 
             // Write the giant policy to a JSON file
-            File.WriteAllText(@".\adminPolicy.json", giantPolicy.ToJson(true));
-            
 
-            File.WriteAllText(@".\readonlyPolicy.json", giantPolicy.ToJson(true));
+            File.WriteAllText(@".\adminLongPolicy.json", PolicyWorker.CombinePolicies(detailedPolicies, mapper, "CaissaCorrectedSalesAdminPolicy").ToJson(true));
+
+            File.WriteAllText(@".\readonlyPolicy.json", PolicyWorker.CombinePolicies(tightPolicies, mapper, "CaissaCorrectedSalesReadOnlyPolicy").ToJson(true));
         }
     }
 }

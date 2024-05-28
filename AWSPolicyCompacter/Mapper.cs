@@ -58,40 +58,7 @@ namespace AWSPolicyCompacter
             }
         }
 
-        internal (IEnumerable<ServicePrefixMap>, IEnumerable<string>) GetActions(string policyAction)
-        {
-            var servicePrefix = policyAction[0..^2];
-
-            // Find the services that match the action prefix
-            var services = _prefixMap.Where(p => p.prefix == servicePrefix);
-
-            // Check if any services were found
-            if (services.Count() == 0)
-            {
-                Console.WriteLine($"{policyAction}-------------- No Service? ------------");
-                return (null!,null!);
-            }
-
-            // Print the services
-            foreach (var service in services)
-            {
-                Console.WriteLine(service.service);
-            }
-
-            // Get the actions for the matching service prefixes
-            IEnumerable<string> actions = _serviceActions.Where(s => s.StringPrefix.Equals(servicePrefix, StringComparison.CurrentCultureIgnoreCase)).SelectMany(s => s.Actions).Distinct();
-
-            // Check if any actions were found
-            if (actions is null)
-            {
-                Console.WriteLine($"{policyAction}-------------- No Actions? ------------");
-                return (services, null!);
-            }
-
-            return (services, actions);
-        }
-
-        internal (IEnumerable<ServicePrefixMap>, IEnumerable<string>) GetDescriptorActions(string policyAction)
+        internal (IEnumerable<ServicePrefixMap>, IEnumerable<string>) GetActionsSubset(string policyAction)
         {
             var servicePrefix = policyAction.Substring(0, policyAction.IndexOf(':'));
 
